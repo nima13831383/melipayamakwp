@@ -194,7 +194,9 @@ class NLSMS_Hooks
 
     public function on_order_status_changed($order_id, $from, $to_status, $order)
     {
-        // وضعیت‌هایی که به معنای تحویل به پست هستند
+        if ($to_status !== 'completed') {
+            return;
+        }
         $shipped_statuses = apply_filters('nlsms_shipped_statuses', array('completed'));
 
         if (! in_array($to_status, $shipped_statuses, true)) {
@@ -207,19 +209,39 @@ class NLSMS_Hooks
             return;
         }
 
-        // کد رهگیری: ترجیحاً از متای سفارش، در غیر این‌صورت خالی
-        $tracking_code = $this->get_tracking_code($order);
+        // خواندن کد رهگیری از فیلد اختصاصی
+        $tracking_code = $order->get_meta('_nlsms_tracking_code');
+
+        if (empty($tracking_code)) {
+            NLSMS_Logger::error(
+                'shipped',
+                $phone,
+                'کد رهگیری وارد نشده (_nlsms_tracking_code خالی است)',
+                array('order_id' => $order_id)
+            );
+            return;
+        }
+
+        // نام مشتری برای {0}
+        $name = $order->get_billing_first_name();
+        if (empty($name)) {
+            $name = $order->get_formatted_billing_full_name();
+        }
+        if (empty($name)) {
+            $name = 'رفیق';
+        }
 
         $opts   = get_option('nlsms_settings', array());
-        $bodyId = $opts['bodyid_shipped'] ?? '';
+        $bodyId = ! empty($opts['bodyid_shipped']) ? $opts['bodyid_shipped'] : '485323';
 
         NLSMS_SMS_Client::send(
             $phone,
             $bodyId,
-            array($tracking_code),   // متغیر اول الگو = کد رهگیری
+            array($name, $tracking_code),  // {0}=نام، {1}=کد رهگیری
             'shipped'
         );
     }
+
 
     /**
      * استخراج کد رهگیری از متای سفارش
