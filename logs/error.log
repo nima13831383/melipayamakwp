@@ -1,0 +1,1 @@
+{"time":"2026-06-30 14:04:35","level":"ERROR","scenario":"test_register","to":"09220579763","message":"خطای ارتباط: cURL error 7: Failed to connect to rest.payamak-panel.com port 443 after 18 ms: Couldn't connect to server","context":{"bodyId":"485317","variables":[]}}
