@@ -322,6 +322,17 @@ class NLSMS_Hooks
      */
     public function send_comment_sms($order_id)
     {
+        // ✅ اگه قبلاً زمان‌بندی شده، کاری نکن
+        if (wp_next_scheduled('nlsms_send_comment_sms', array($order_id))) {
+            NLSMS_Logger::success(
+                'comment',
+                '',
+                '',
+                'پیامک نظرسنجی قبلاً زمان‌بندی شده بود',
+                array('order_id' => $order_id)
+            );
+            return; // ← خروج بدون زمان‌بندی مجدد
+        }
         $order = wc_get_order($order_id);
         // ❌ سفارش یافت نشد
         if (! $order) {
@@ -385,6 +396,16 @@ class NLSMS_Hooks
      */
     public function schedule_promotional_sms($order_id)
     {
+        if (wp_next_scheduled('nlsms_send_promotional_sms', array($order_id))) {
+            NLSMS_Logger::success(
+                'promotional',
+                '',
+                '',
+                'پیامک تبلیغاتی قبلاً زمان‌بندی شده بود',
+                array('order_id' => $order_id)
+            );
+            return; // ← خروج بدون زمان‌بندی مجدد
+        }
         $days = absint(NLSMS_Settings::get('promotional_delay_days', 30));
         $hours = absint(NLSMS_Settings::get('promotional_delay_hours', 0));
         $minutes = absint(NLSMS_Settings::get('promotional_delay_minutes', 0));
