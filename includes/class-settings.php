@@ -134,6 +134,55 @@ class NLSMS_Settings
             array('key' => 'comment_delay_minutes', 'default' => '0', 'min' => '0', 'max' => '59')
         );
 
+        /* --- بخش پیامک تبلیغاتی --- */
+        add_settings_section('nlsms_promotional', '🎁 پیامک تبلیغاتی', array($this, 'render_promotional_hint'), 'nlsms');
+
+        add_settings_field(
+            'nlsms_promotional_line',
+            'خط ارسال تبلیغاتی',
+            array($this, 'field_text'),
+            'nlsms',
+            'nlsms_promotional',
+            array('key' => 'promotional_line', 'type' => 'text', 'placeholder' => '50002710xxxx')
+        );
+
+        add_settings_field(
+            'nlsms_promotional_text',
+            'متن پیامک تبلیغاتی',
+            array($this, 'field_textarea'),
+            'nlsms',
+            'nlsms_promotional',
+            array('key' => 'promotional_text', 'rows' => 5, 'description' => 'از {0} برای نام مشتری استفاده کنید.')
+        );
+
+        add_settings_field(
+            'nlsms_promotional_delay_days',
+            'تأخیر ارسال - روز',
+            array($this, 'field_number'),
+            'nlsms',
+            'nlsms_promotional',
+            array('key' => 'promotional_delay_days', 'default' => '3', 'min' => '0')
+        );
+
+        add_settings_field(
+            'nlsms_promotional_delay_hours',
+            'تأخیر ارسال - ساعت',
+            array($this, 'field_number'),
+            'nlsms',
+            'nlsms_promotional',
+            array('key' => 'promotional_delay_hours', 'default' => '0', 'min' => '0', 'max' => '23')
+        );
+
+        add_settings_field(
+            'nlsms_promotional_delay_minutes',
+            'تأخیر ارسال - دقیقه',
+            array($this, 'field_number'),
+            'nlsms',
+            'nlsms_promotional',
+            array('key' => 'promotional_delay_minutes', 'default' => '0', 'min' => '0', 'max' => '59')
+        );
+
+
 
         /* --- تنظیمات عمومی --- */
         add_settings_section('nlsms_general', '⚙️ عمومی', null, 'nlsms');
@@ -162,6 +211,26 @@ class NLSMS_Settings
             esc_attr($key),
             $value
         );
+    }
+    public function field_textarea($args)
+    {
+        $opts = get_option(self::OPTION_KEY, array());
+        $key  = $args['key'];
+        $rows = $args['rows'] ?? 4;
+        $description = $args['description'] ?? '';
+        $value = isset($opts[$key]) ? esc_textarea($opts[$key]) : '';
+
+        printf(
+            '<textarea name="%s[%s]" rows="%d" class="large-text">%s</textarea>',
+            esc_attr(self::OPTION_KEY),
+            esc_attr($key),
+            absint($rows),
+            $value
+        );
+
+        if ($description) {
+            printf('<p class="description">%s</p>', esc_html($description));
+        }
     }
 
     public function field_checkbox($args)
@@ -206,6 +275,10 @@ class NLSMS_Settings
     {
         echo '<p style="color:#666">پیامک نظرسنجی چند روز بعد از تکمیل سفارش ارسال می‌شود. زمان را به روز/ساعت/دقیقه تنظیم کنید (مثلاً 7 روز = 604800 ثانیه).</p>';
     }
+    public function render_promotional_hint()
+    {
+        echo '<p style="color:#666">پیامک تبلیغاتی از API معمولی ارسال می‌شود (نه الگو). باید خط اختصاصی داشته باشید.</p>';
+    }
 
 
     /* ───────── پاکسازی ورودی ───────── */
@@ -213,15 +286,20 @@ class NLSMS_Settings
     public function sanitize_options($input)
     {
         $clean = array();
-        $text_fields = array('username', 'password', 'apikey', 'bodyid_register', 'bodyid_order', 'bodyid_shipped', 'bodyid_comment');
+        $text_fields = array('username', 'password', 'apikey', 'bodyid_register', 'bodyid_order', 'bodyid_shipped', 'bodyid_comment', 'promotional_line');
         foreach ($text_fields as $f) {
             $clean[$f] = isset($input[$f]) ? sanitize_text_field($input[$f]) : '';
         }
+        $clean['promotional_text'] = isset($input['promotional_text']) ? sanitize_textarea_field($input['promotional_text']) : '';
+        
         // فیلدهای عددی
         $number_fields = array(
             'comment_delay_days'    => 7,
             'comment_delay_hours'   => 0,
             'comment_delay_minutes' => 0,
+            'promotional_delay_days'    => 3,      // ← اضافه شد
+            'promotional_delay_hours'   => 0,      // ← اضافه شد
+            'promotional_delay_minutes' => 0,      // ← اضافه شد
         );
         foreach ($number_fields as $f => $default) {
             $clean[$f] = isset($input[$f]) ? absint($input[$f]) : $default;
@@ -396,5 +474,12 @@ class NLSMS_Settings
             add_query_arg('page', 'nilsonlab-sms', admin_url('options-general.php'))
         );
         exit;
+    }
+    /* ───────── Helper برای خواندن تنظیمات ───────── */
+
+    public static function get($key, $default = '')
+    {
+        $opts = get_option(self::OPTION_KEY, array());
+        return $opts[$key] ?? $default;
     }
 }

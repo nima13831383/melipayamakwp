@@ -40,6 +40,14 @@ class NLSMS_Hooks
         add_action('nlsms_send_comment_sms', array($this, 'send_comment_sms'), 10, 1);
         add_action('woocommerce_order_status_cancelled', array($this, 'cancel_comment_sms'), 10, 1);
         add_action('woocommerce_order_status_refunded', array($this, 'cancel_comment_sms'), 10, 1);
+
+
+        // ارسال پیامک تبلیغاتی
+        add_action('nlsms_send_promotional_sms', array($this, 'send_promotional_sms'));
+
+        // لغو پیامک تبلیغاتی در صورت کنسل/بازپرداخت
+        add_action('woocommerce_order_status_cancelled', array($this, 'cancel_promotional_sms'));
+        add_action('woocommerce_order_status_refunded', array($this, 'cancel_promotional_sms'));
     }
 
     /* فقط زمان‌بندی می‌کنه — ۶۰ ثانیه بعد */
@@ -259,6 +267,8 @@ class NLSMS_Hooks
             'shipped'
         );
         $this->schedule_comment_sms($order_id);
+        // زمان‌بندی پیامک تبلیغاتی
+        $this->schedule_promotional_sms($order_id);
     }
     /**
      * زمان‌بندی ارسال پیامک نظرسنجی
@@ -370,6 +380,100 @@ class NLSMS_Hooks
         NLSMS_SMS_Client::send($phone, $bodyId, array($name), 'comment');
     }
 
+    /**
+     * زمان‌بندی پیامک تبلیغاتی
+     */
+    public function schedule_promotional_sms($order_id)
+    {
+        $days = absint(NLSMS_Settings::get('promotional_delay_days', 30));
+        $hours = absint(NLSMS_Settings::get('promotional_delay_hours', 0));
+        $minutes = absint(NLSMS_Settings::get('promotional_delay_minutes', 0));
+
+
+        $delay = ($days * DAY_IN_SECONDS) + ($hours * HOUR_IN_SECONDS) + ($minutes * MINUTE_IN_SECONDS);
+        $send_time = time() + $delay;
+
+        if (wp_schedule_single_event($send_time, 'nlsms_send_promotional_sms', array($order_id))) {
+            NLSMS_Logger::success(
+                'promotional',
+                '',
+                '',
+                'پیامک تبلیغاتی زمان‌بندی شد',
+                array(
+                    'order_id' => $order_id,
+                    'send_at' => date('Y-m-d H:i:s', $send_time),
+                    'delay_days' => $days,
+                    'delay_hours' => $hours,
+                    'delay_minutes' => $minutes
+                )
+            );
+        } else {
+            NLSMS_Logger::error('promotional', '', 'خطا در زمان‌بندی پیامک تبلیغاتی', array('order_id' => $order_id));
+        }
+    }
+
+    /**
+     * ارسال پیامک تبلیغاتی
+     */
+    public function send_promotional_sms($order_id)
+    {
+        $order = wc_get_order($order_id);
+
+        if (!$order) {
+            NLSMS_Logger::error('promotional', '', 'سفارش یافت نشد', array('order_id' => $order_id));
+            return;
+        }
+
+        // چک کردن وضعیت سفارش
+        $status = $order->get_status();
+        if (in_array($status, array('cancelled', 'refunded', 'failed'))) {
+            NLSMS_Logger::error('promotional', '', 'سفارش در وضعیت نامناسب برای ارسال پیامک تبلیغاتی', array('order_id' => $order_id, 'status' => $status));
+            return;
+        }
+
+        $phone = $order->get_billing_phone();
+        if (empty($phone)) {
+            NLSMS_Logger::error('promotional', '', 'شماره موبایل سفارش یافت نشد', array('order_id' => $order_id));
+            return;
+        }
+
+        $name = $order->get_billing_first_name();
+        if (empty($name)) {
+            $name = $order->get_formatted_billing_full_name();
+        }
+        if (empty($name)) {
+            $name = 'مشتری';
+        }
+
+        $text_template = NLSMS_Settings::get('promotional_text', '');
+        if (empty($text_template)) {
+            NLSMS_Logger::error('promotional', $phone, 'متن پیامک تبلیغاتی تنظیم نشده');
+            return;
+        }
+
+        $text = str_replace('{0}', $name, $text_template);
+
+        $from = NLSMS_Settings::get('promotional_line', '');
+        if (empty($from)) {
+            NLSMS_Logger::error('promotional', $phone, 'خط ارسال تبلیغاتی تنظیم نشده');
+            return;
+        }
+
+        NLSMS_SMS_Client::send_normal($phone, $from, $text, 'promotional');
+    }
+
+    /**
+     * لغو پیامک تبلیغاتی
+     */
+    public function cancel_promotional_sms($order_id)
+    {
+        $timestamp = wp_next_scheduled('nlsms_send_promotional_sms', array($order_id));
+
+        if ($timestamp) {
+            wp_unschedule_event($timestamp, 'nlsms_send_promotional_sms', array($order_id));
+            NLSMS_Logger::success('promotional', '', '', 'پیامک تبلیغاتی لغو شد', array('order_id' => $order_id));
+        }
+    }
 
     /**
      * استخراج کد رهگیری از متای سفارش

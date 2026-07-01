@@ -76,7 +76,7 @@ class NLSMS_SMS_Client
         $password = isset($opts['password']) ? trim($opts['password']) : '';
         // اگر ApiKey پر بود اولویت داره (کد خطای 110)
         $credential = ! empty($apikey) ? $apikey : $password;
-        $password =$credential;
+        $password = $credential;
         $to = self::normalize_number($to);
 
         // اعتبارسنجی اولیه
@@ -153,5 +153,68 @@ class NLSMS_SMS_Client
         );
 
         return array('ok' => false, 'recId' => null, 'error' => $err, 'raw' => $parsed ?: $body);
+    }
+
+
+    /**
+     * ارسال پیامک معمولی/تبلیغاتی
+     * 
+     * @param string $to شماره گیرنده
+     * @param string $from خط ارسال
+     * @param string $text متن پیامک
+     * @param string $log_type نوع لاگ
+     * @return bool
+     */
+    public static function send_normal($to, $from, $text, $log_type = 'promotional')
+    {
+        // $username = get_option('nlsms_username');
+        // $api_key = get_option('nlsms_api_key');
+        $opts     = get_option('nlsms_settings', array());
+        $username = isset($opts['username']) ? trim($opts['username']) : '';
+        $api_key  = isset($opts['apikey'])   ? trim($opts['apikey'])   : '';
+        $password = isset($opts['password']) ? trim($opts['password']) : '';
+
+        if (empty($username) || empty($api_key)) {
+            NLSMS_Logger::error($log_type, $to, 'نام کاربری یا ApiKey تنظیم نشده');
+            return false;
+        }
+
+        if (empty($from)) {
+            NLSMS_Logger::error($log_type, $to, 'خط ارسال تنظیم نشده');
+            return false;
+        }
+
+        $url = 'https://rest.payamak-panel.com/api/SendSMS/SendSMS';
+
+        $body = array(
+            'username' => $username,
+            'password' => $api_key,
+            'to'       => $to,
+            'from'     => $from,
+            'text'     => $text,
+            'isFlash'  => false
+        );
+
+        $response = wp_remote_post($url, array(
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => json_encode($body),
+            'timeout' => 30
+        ));
+
+        if (is_wp_error($response)) {
+            NLSMS_Logger::error($log_type, $to, 'خطا در ارسال: ' . $response->get_error_message());
+            return false;
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (isset($body['RetStatus']) && $body['RetStatus'] == 1) {
+            NLSMS_Logger::success($log_type, $to, 'اس ام اس خرید مجدد سی روزه', 'پیامک ارسال شد', array('RecID' => $body['Value']));
+            return true;
+        }
+
+        $error_msg = isset($body['StrRetStatus']) ? $body['StrRetStatus'] : 'خطای نامشخص';
+        NLSMS_Logger::error($log_type, $to, 'ارسال ناموفق: ' . $error_msg, $body);
+        return false;
     }
 }
