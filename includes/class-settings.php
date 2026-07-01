@@ -91,6 +91,50 @@ class NLSMS_Settings
             );
         }
 
+        /* --- بخش نظرسنجی --- */
+        add_settings_section('nlsms_comment', '💬 پیامک نظرسنجی', array($this, 'render_comment_hint'), 'nlsms');
+
+        // bodyId نظرسنجی
+        add_settings_field(
+            'nlsms_bodyid_comment',
+            'bodyId پیامک نظرسنجی',
+            array($this, 'field_text'),
+            'nlsms',
+            'nlsms_comment',
+            array('key' => 'bodyid_comment', 'type' => 'text')
+        );
+
+        // روز
+        add_settings_field(
+            'nlsms_comment_delay_days',
+            'تأخیر ارسال - روز',
+            array($this, 'field_number'),
+            'nlsms',
+            'nlsms_comment',
+            array('key' => 'comment_delay_days', 'default' => '7', 'min' => '0')
+        );
+
+        // ساعت
+        add_settings_field(
+            'nlsms_comment_delay_hours',
+            'تأخیر ارسال - ساعت',
+            array($this, 'field_number'),
+            'nlsms',
+            'nlsms_comment',
+            array('key' => 'comment_delay_hours', 'default' => '0', 'min' => '0', 'max' => '23')
+        );
+
+        // دقیقه
+        add_settings_field(
+            'nlsms_comment_delay_minutes',
+            'تأخیر ارسال - دقیقه',
+            array($this, 'field_number'),
+            'nlsms',
+            'nlsms_comment',
+            array('key' => 'comment_delay_minutes', 'default' => '0', 'min' => '0', 'max' => '59')
+        );
+
+
         /* --- تنظیمات عمومی --- */
         add_settings_section('nlsms_general', '⚙️ عمومی', null, 'nlsms');
         add_settings_field(
@@ -134,20 +178,53 @@ class NLSMS_Settings
             esc_html($label)
         );
     }
+    public function field_number($args)
+    {
+        $opts    = get_option(self::OPTION_KEY, array());
+        $key     = $args['key'];
+        $default = $args['default'] ?? '';
+        $value   = isset($opts[$key]) ? esc_attr($opts[$key]) : $default;
+
+        $min = isset($args['min']) ? ' min="' . esc_attr($args['min']) . '"' : '';
+        $max = isset($args['max']) ? ' max="' . esc_attr($args['max']) . '"' : '';
+
+        printf(
+            '<input type="number" name="%s[%s]" value="%s" class="small-text"%s%s>',
+            esc_attr(self::OPTION_KEY),
+            esc_attr($key),
+            $value,
+            $min,
+            $max
+        );
+    }
 
     public function render_bodies_hint()
     {
         echo '<p style="color:#666">هر کد را از پنل ملی‌پیامک ← پیامک الگو دریافت کنید. برای سناریوی تحویل به پست، الگو باید یک متغیر (کد رهگیری) داشته باشد.</p>';
     }
+    public function render_comment_hint()
+    {
+        echo '<p style="color:#666">پیامک نظرسنجی چند روز بعد از تکمیل سفارش ارسال می‌شود. زمان را به روز/ساعت/دقیقه تنظیم کنید (مثلاً 7 روز = 604800 ثانیه).</p>';
+    }
+
 
     /* ───────── پاکسازی ورودی ───────── */
 
     public function sanitize_options($input)
     {
         $clean = array();
-        $text_fields = array('username', 'password', 'apikey', 'bodyid_register', 'bodyid_order', 'bodyid_shipped');
+        $text_fields = array('username', 'password', 'apikey', 'bodyid_register', 'bodyid_order', 'bodyid_shipped', 'bodyid_comment');
         foreach ($text_fields as $f) {
             $clean[$f] = isset($input[$f]) ? sanitize_text_field($input[$f]) : '';
+        }
+        // فیلدهای عددی
+        $number_fields = array(
+            'comment_delay_days'    => 7,
+            'comment_delay_hours'   => 0,
+            'comment_delay_minutes' => 0,
+        );
+        foreach ($number_fields as $f => $default) {
+            $clean[$f] = isset($input[$f]) ? absint($input[$f]) : $default;
         }
         $clean['enabled'] = ! empty($input['enabled']) ? 1 : 0;
         return $clean;

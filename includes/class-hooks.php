@@ -37,6 +37,9 @@ class NLSMS_Hooks
 
 
         add_action('woocommerce_order_status_changed', array($this, 'on_order_status_changed'), 10, 4);
+        add_action('nlsms_send_comment_sms', array($this, 'send_comment_sms'), 10, 1);
+        add_action('woocommerce_order_status_cancelled', array($this, 'cancel_comment_sms'), 10, 1);
+        add_action('woocommerce_order_status_refunded', array($this, 'cancel_comment_sms'), 10, 1);
     }
 
     /* فقط زمان‌بندی می‌کنه — ۶۰ ثانیه بعد */
@@ -44,6 +47,21 @@ class NLSMS_Hooks
     {
         if (!wp_next_scheduled('nlsms_send_register_sms', array($user_id))) {
             wp_schedule_single_event(time() + 15, 'nlsms_send_register_sms', array($user_id));
+        }
+    }
+    public function cancel_comment_sms($order_id)
+    {
+        $scheduled = wp_next_scheduled('nlsms_send_comment_sms', array($order_id));
+        if ($scheduled) {
+            wp_unschedule_event($scheduled, 'nlsms_send_comment_sms', array($order_id));
+            NLSMS_Logger::success(
+                'comment',
+                '',
+                '',
+                'پیامک نظرسنجی لغو شد',
+
+                array('order_id' => $order_id)
+            );
         }
     }
 
@@ -240,6 +258,116 @@ class NLSMS_Hooks
             array($name, $tracking_code),  // {0}=نام، {1}=کد رهگیری
             'shipped'
         );
+        $this->schedule_comment_sms($order_id);
+    }
+    /**
+     * زمان‌بندی ارسال پیامک نظرسنجی
+     *
+     * @param int $order_id
+     */
+    private function schedule_comment_sms($order_id)
+    {
+        // خواندن تأخیر از تنظیمات
+        // $delay = (int) get_option('nlsms_comment_delay', 604800); // پیش‌فرض 7 روز
+
+        // یا اگه از فیلدهای جدا استفاده کردی:
+        $opts = get_option(NLSMS_Settings::OPTION_KEY, array());
+
+        $days    = absint($opts['comment_delay_days'] ?? 7);
+        $hours   = absint($opts['comment_delay_hours'] ?? 0);
+        $minutes = absint($opts['comment_delay_minutes'] ?? 0);
+
+        $delay = ($days * DAY_IN_SECONDS) + ($hours * HOUR_IN_SECONDS) + ($minutes * MINUTE_IN_SECONDS);
+        $send_time = time() + $delay;
+
+
+        // چک کنیم قبلاً زمان‌بندی نشده باشه
+        $scheduled = wp_next_scheduled('nlsms_send_comment_sms', array($order_id));
+        if ($scheduled) {
+            wp_unschedule_event($scheduled, 'nlsms_send_comment_sms', array($order_id));
+        }
+
+        wp_schedule_single_event($send_time, 'nlsms_send_comment_sms', array($order_id));
+
+        // NLSMS_Logger::log('info', 'comment', 'پیامک نظرسنجی زمان‌بندی شد', array(
+        //     'order_id'  => $order_id,
+        //     'send_time' => date('Y-m-d H:i:s', $send_time),
+        // ));
+        NLSMS_Logger::success(
+            'comment',
+            '', // شماره موبایل رو نداری، خالی بذار یا بعداً اضافه کن
+            '',
+            '',
+            array(
+                'action'    => 'scheduled',
+                'order_id'  => $order_id,
+                'send_time' => date('Y-m-d H:i:s', $send_time),
+            )
+        );
+    }
+    /**
+     * ارسال پیامک نظرسنجی (از طریق کرون)
+     *
+     * @param int $order_id
+     */
+    public function send_comment_sms($order_id)
+    {
+        $order = wc_get_order($order_id);
+        // ❌ سفارش یافت نشد
+        if (! $order) {
+            NLSMS_Logger::error(
+                'comment',
+                '',
+                'سفارش یافت نشد',
+                array('order_id' => $order_id)
+            );
+            return;
+        }
+
+        // فقط اگه سفارش هنوز completed باشه (اگه کنسل یا refund نشده)
+        if ($order->get_status() !== 'completed') {
+            NLSMS_Logger::error(
+                'comment',
+                $order->get_billing_phone(),
+                'وضعیت سفارش دیگه completed نیست، پیامک ارسال نشد',
+                array(
+                    'order_id' => $order_id,
+                    'status'   => $order->get_status(),
+                )
+            );
+            return;
+        }
+
+
+        $phone = $order->get_billing_phone();
+        if (empty($phone)) {
+            NLSMS_Logger::error(
+                'comment',
+                '',
+                'شماره موبایل سفارش یافت نشد',
+                array('order_id' => $order_id)
+            );
+            return;
+        }
+
+
+        // نام مشتری
+        $name = $order->get_billing_first_name();
+        if (empty($name)) {
+            $name = $order->get_formatted_billing_full_name();
+        }
+        if (empty($name)) {
+            $name = 'کاربر';
+        }
+
+        // bodyId از تنظیمات
+        $opts = get_option(NLSMS_Settings::OPTION_KEY, array());
+        $bodyId = $opts['bodyid_comment'] ?? '';
+
+
+        // ارسال پیامک
+        // قالب: {0} = نام مشتری
+        NLSMS_SMS_Client::send($phone, $bodyId, array($name), 'comment');
     }
 
 
